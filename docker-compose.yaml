@@ -1,0 +1,54 @@
+version: '3.3'
+
+services:
+  db:
+    image: mariadb:10.1
+    container_name: Tanawat_DEVz-mariadb
+    restart: always
+    volumes:
+      - ./db_data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+      MYSQL_DATABASE: example
+      MYSQL_USER: superadmin
+      MYSQL_PASSWORD: superadmin
+
+  am:
+    image: adminer
+    container_name: Tanawat_DEVz-adminer
+    restart: always
+    ports:
+      - 2101:8080
+    depends_on:
+      - db
+
+  pma:
+    depends_on:
+      - db
+    image: phpmyadmin/phpmyadmin
+    container_name: Tanawat_DEVz-phpmyadmin
+    links:
+      - db:db
+    ports:
+      - '2102:80'
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: superadmin
+
+  node_express:
+    build: .
+    image: tanawat_devz-nodejs
+    container_name: Tanawat_DEVz-nodejs
+    restart: always
+    links:
+      - db:db
+    ports:
+      - 2103:3000
+    volumes:
+      - .:/nodeapp
+    depends_on:
+      - pma
+
+volumes:
+  db_data:
+    driver: local
