@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [24, 26]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=low
+      - run: npm test
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # .env.example's placeholder passwords are fine for throwaway CI containers.
+      - run: cp .env.example .env
+      - run: docker compose up -d --build --wait
+      - name: every service answers
+        run: |
+          curl -fsS localhost:2103/ && echo
+          curl -fsS localhost:2103/db && echo
+          curl -fsS -o /dev/null localhost:2101/
+          curl -fsS -o /dev/null localhost:2102/
+          test "$(docker compose exec -T node_express whoami)" = node
+      - if: always()
+        run: docker compose down -v
