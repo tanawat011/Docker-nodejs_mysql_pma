@@ -1,54 +1,79 @@
-version: '3.3'
+# Node.js + MariaDB + phpMyAdmin + Adminer for local development.
+# DEV ONLY: passwords come from .env (copy .env.example); never reuse them.
+# Every port is bound to 127.0.0.1, so only this machine can reach them.
+name: docker-nodejs-mysql-pma
 
 services:
   db:
-    image: mariadb:10.1
-    container_name: Tanawat_DEVz-mariadb
-    restart: always
+    image: mariadb:12.3.3
+    restart: unless-stopped
     volumes:
-      - ./db_data:/var/lib/mysql
+      - db_data:/var/lib/mysql
     environment:
-      MYSQL_ROOT_PASSWORD: example
-      MYSQL_DATABASE: example
-      MYSQL_USER: superadmin
-      MYSQL_PASSWORD: superadmin
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?copy .env.example to .env}
+      MARIADB_DATABASE: ${DB_NAME:-example}
+      MARIADB_USER: ${DB_USER:-app}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?copy .env.example to .env}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
 
-  am:
-    image: adminer
-    container_name: Tanawat_DEVz-adminer
-    restart: always
+  adminer:
+    image: adminer:6.3.1
+    restart: unless-stopped
     ports:
-      - 2101:8080
+      - "127.0.0.1:${ADMINER_PORT:-2101}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8080/') === false ? 1 : 0);"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   pma:
-    depends_on:
-      - db
-    image: phpmyadmin/phpmyadmin
-    container_name: Tanawat_DEVz-phpmyadmin
-    links:
-      - db:db
+    image: phpmyadmin:5.2.3-apache
+    restart: unless-stopped
     ports:
-      - '2102:80'
-    restart: always
+      - "127.0.0.1:${PMA_PORT:-2102}:80"
     environment:
-      MYSQL_ROOT_PASSWORD: superadmin
+      PMA_HOST: db # sign in with DB_USER / DB_PASSWORD (or root)
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   node_express:
     build: .
-    image: tanawat_devz-nodejs
-    container_name: Tanawat_DEVz-nodejs
-    restart: always
-    links:
-      - db:db
+    restart: unless-stopped
     ports:
-      - 2103:3000
-    volumes:
-      - .:/nodeapp
+      - "127.0.0.1:${NODE_PORT:-2103}:3000"
+    environment:
+      DB_HOST: db
+      DB_NAME: ${DB_NAME:-example}
+      DB_USER: ${DB_USER:-app}
+      DB_PASSWORD: ${DB_PASSWORD:?copy .env.example to .env}
     depends_on:
-      - pma
+      db:
+        condition: service_healthy
+    # `docker compose watch` copies an edited server.js in and restarts.
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./server.js
+          target: /nodeapp/server.js
+        - action: rebuild
+          path: package.json
 
 volumes:
   db_data:
-    driver: local
